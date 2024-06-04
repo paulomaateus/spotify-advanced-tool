@@ -1,17 +1,19 @@
 import requests
 import base64
 import threading
-from fastapi.responses import RedirectResponse
-from fastapi.requests import Request
 import httpx
 from app.core.consts import CLIENT_ID, CLIENT_SECRET
+from app.models.album import AlbumResponse
+from fastapi.responses import RedirectResponse
 
 
 class SpotifyWorker:
     def __init__(self):
         self._token = None
         self._tokenType = None
+        self._headers = None
         self._spotify_url = "https://api.spotify.com/v1"
+        self.logged = False
 
     def _authorize_user(self):
         response_type = "code"
@@ -42,6 +44,8 @@ class SpotifyWorker:
             self._tokenType = data["token_type"]
             self._start_token_renewal_timer(data["expires_in"])
             self._headers = {"Authorization": f"{self._tokenType} {self._token}"}
+            self.logged = True
+            
             return RedirectResponse("http://localhost:8000/docs")
         else:
             raise Exception(f"Erro no login: {response.json()}")
@@ -76,34 +80,40 @@ class SpotifyWorker:
     ):
         formated_id = self._get_id_from_url(artist_id)
         url = f"{self._spotify_url}/artists/{formated_id}/albums?include_groups={categories}&market={country}&limit={quantity}&offset={offset}"
-
         try:
             response = requests.get(url=url, headers=self._headers)
         except Exception as e:
             raise e
         return response.json()
 
-    def request_album_tracks(self, album_id: str, order_by: str | None):
+    def request_album_tracks(
+        self, album_id: str, order_by: str | None
+    ) -> AlbumResponse:
         formated_id = self._get_id_from_url(album_id)
         url = f"{self._spotify_url}/albums/{formated_id}"
 
+        print(self.logged)
+        
+        
         try:
             response = requests.get(url=url, headers=self._headers)
         except Exception as e:
             raise e
+        data = response.json()
+        album_tracks = data["tracks"]["items"]
+        album_tracks_infos = []
+
+        for album_track in album_tracks:
+            album_tracks_infos.append(self.request_track_info(album_track["id"]))
+
         if order_by:
-            album_tracks = response.json()["tracks"]["items"]
-            album_tracks_infos = []
-
-            for album_track in album_tracks:
-                album_tracks_infos.append(self.request_track_info(album_track["id"]))
-
-            sorted_tracks = sorted(
+            album_tracks_infos = sorted(
                 album_tracks_infos, key=lambda track: track[order_by], reverse=True
             )
+        data["tracks"]["items"] = album_tracks_infos
+        response = AlbumResponse(data)
 
-            return sorted_tracks
-        return response.json()
+        return response
 
     def request_track_info(self, track_id: str):
         formated_id = self._get_id_from_url(track_id)
