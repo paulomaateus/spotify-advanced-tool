@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import List
-from app.models.track import TrackAlbumResponse
+from app.models.track import TrackResponse
 
 class AlbumResponse(BaseModel):
     album_type: str
@@ -21,7 +21,7 @@ class AlbumArtistsResponse(BaseModel):
 
 class AlbumTracksResponse(BaseModel):
     total: int
-    items: List["AlbumSimplifiedTrackResponse"] | List["TrackAlbumResponse"]
+    items: List["AlbumSimplifiedTrackResponse"] | List["TrackResponse"]
 
 
 class AlbumSimplifiedTrackResponse(BaseModel):

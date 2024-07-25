@@ -4,6 +4,9 @@ import threading
 import httpx
 from app.core.consts import CLIENT_ID, CLIENT_SECRET
 from app.models.album import AlbumResponse
+from app.models.track import TrackResponse
+from app.models.artist import PopularTracksResponse, ArtistAlbumsResponse
+from app.models.schemas import Error
 from fastapi.responses import RedirectResponse
 
 
@@ -45,7 +48,7 @@ class SpotifyWorker:
             self._start_token_renewal_timer(data["expires_in"])
             self._headers = {"Authorization": f"{self._tokenType} {self._token}"}
             self.logged = True
-            
+
             return RedirectResponse("http://localhost:8000/docs")
         else:
             raise Exception(f"Erro no login: {response.json()}")
@@ -65,7 +68,9 @@ class SpotifyWorker:
                 return url[i + 1 :]
         return url
 
-    def request_artist_top_tracks(self, artist_id: str):
+    def request_artist_top_tracks(
+        self, artist_id: str
+    ) -> PopularTracksResponse | Error:
 
         formated_id = self._get_id_from_url(artist_id)
         url = f"{self._spotify_url}/artists/{formated_id}/top-tracks?market=BR"
@@ -73,56 +78,67 @@ class SpotifyWorker:
             response = requests.get(url=url, headers=self._headers)
         except Exception as e:
             raise e
-        return response.json()
+        if response.status_code != 200:
+            return Error(**response.json())
+
+        return PopularTracksResponse(**response.json())
 
     def request_artist_albums(
         self, artist_id: str, categories: str, country: str, quantity: int, offset: int
-    ):
+    ) -> ArtistAlbumsResponse | Error:
         formated_id = self._get_id_from_url(artist_id)
         url = f"{self._spotify_url}/artists/{formated_id}/albums?include_groups={categories}&market={country}&limit={quantity}&offset={offset}"
         try:
             response = requests.get(url=url, headers=self._headers)
         except Exception as e:
             raise e
-        return response.json()
+        if response.status_code != 200:
+            return Error(**response.json())
+
+        return ArtistAlbumsResponse(**response.json())
 
     def request_album_tracks(
         self, album_id: str, order_by: str | None
-    ) -> AlbumResponse:
+    ) -> AlbumResponse | Error:
         formated_id = self._get_id_from_url(album_id)
         url = f"{self._spotify_url}/albums/{formated_id}"
 
-        print(self.logged)
-        
-        
         try:
             response = requests.get(url=url, headers=self._headers)
         except Exception as e:
             raise e
+        if response.status_code != 200:
+            return Error(**response.json())
+
         data = response.json()
-        album_tracks = data["tracks"]["items"]
+        album_tracks = data['tracks']['items']
         album_tracks_infos = []
 
         for album_track in album_tracks:
-            album_tracks_infos.append(self.request_track_info(album_track["id"]))
+            track_info = self.request_track_info(album_track['id'])
+            if type(track_info) == Error:
+                return track_info
+            album_tracks_infos.append(track_info)
 
         if order_by:
             album_tracks_infos = sorted(
                 album_tracks_infos, key=lambda track: track[order_by], reverse=True
             )
-        data["tracks"]["items"] = album_tracks_infos
-        response = AlbumResponse(data)
+        data["tracks"]['items'] = album_tracks_infos
+        response = AlbumResponse(**data)
 
         return response
 
-    def request_track_info(self, track_id: str):
+    def request_track_info(self, track_id: str) -> TrackResponse | Error:
         formated_id = self._get_id_from_url(track_id)
         url = f"{self._spotify_url}/tracks/{formated_id}"
         try:
             response = requests.get(url=url, headers=self._headers)
         except Exception as e:
             raise e
-        return response.json()
+        if response.status_code != 200:
+            return Error(**response.json())
+        return TrackResponse(**response.json())
 
     def _playlist_add_list_of_tracks(
         self, playlist_id: str, tracks: list[str], position: int
