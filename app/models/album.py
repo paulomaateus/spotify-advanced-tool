@@ -28,7 +28,6 @@ class AlbumSimplifiedTrackResponse(BaseModel):
     artists: List["AlbumArtistsResponse"]
     duration_ms: int
     id: str
-    is_playable: bool
     name: str
     uri: str
     

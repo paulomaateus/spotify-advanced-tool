@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request, Response
 from app.services.spotify_worker import SpotifyWorker
 from app.models.track import TrackResponse
 from app.models.schemas import Error
+from app.models.playlist import AddArtistTracksToPlaylistBody
 
 router = APIRouter()
 
@@ -85,13 +86,22 @@ def request_artist_popular_tracks(artist_id: str):
 
 
 #playlists 
-@router.post("/playlists/album", tags=["Playlists"])
-def adicionar_album_playlist(url_album: str, url_playlist: str, posicao: int = 0):
+@router.post("/playlists/{id_playlist}/album", tags=["Playlists"])
+def adicionar_album_playlist(id_playlist: str, url_album: str, posicao: int = 0):
     lista_de_musicas = spotify_service._request_album_tracks_rank(url_album)
     try:
         response = spotify_service._playlist_add_list_of_tracks(
-            playlist_id=url_playlist, position=posicao, tracks=lista_de_musicas
+            playlist_id=id_playlist, position=posicao, tracks=lista_de_musicas
         )
     except Exception as e:
         return {"error": str(e)}
     return response.json()
+
+@router.post("/playlists/{id_playlist}/artists", tags=["Playlists"])
+def adicionar_faixas_artista_playlist(id_playlist: str, req_body: AddArtistTracksToPlaylistBody ):
+    try: 
+        response = spotify_service.add_artists_tracks_playlist(playlist_id=id_playlist, request_body=req_body)
+    except Exception as e: 
+        return {"error" : str(e)}
+    
+    return response
