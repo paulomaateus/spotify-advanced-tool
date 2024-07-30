@@ -148,12 +148,13 @@ class SpotifyWorker:
     ):
         playlist_id = self._get_id_from_url(playlist_id)
         errors = []
+        seen_names = set()
         if request_body.all_tracks:
             # for each artist, retrieve their albums
             for artist_id in request_body.artists_ids:
                 try:
                     albums = self.request_artist_albums(
-                        artist_id, "album,single", "BR", 50, 0
+                        artist_id, "album,single,appears_on,compilation", "BR", 50, 0
                     )
                 except Exception as e:
                     errors.append({"artist_id": artist_id, "error": str(e)})
@@ -168,7 +169,6 @@ class SpotifyWorker:
                         for track in album_tracks.tracks.items
                     ]
                     # remove duplicates
-                    seen_names = set()
                     track_uris = [
                         item
                         for item in track_uris
@@ -179,15 +179,101 @@ class SpotifyWorker:
                     # with the tracks, add the album's tracks in playlist
                     # the spotify only allowed add 100 songs per request, so this method add album by album in the provided playlist
                     try:
-                        self._playlist_add_list_of_tracks(playlist_id=playlist_id, tracks=track_uris)
+                        self._playlist_add_list_of_tracks(
+                            playlist_id=playlist_id, tracks=track_uris
+                        )
                     except Exception as e:
-                        print("na verdade o erro foi aqui")
                         errors.append({"album_id": album.id, "error": str(e)})
-            
+
             return {"errors": errors}
-        else:   
-            # TODO configure the input albums 
-            return
+        else:
+            # for each artist, retrieve their albums according the configuration provided
+            for artist_id in request_body.artists_ids:
+                try:
+                    albums = self.request_artist_albums(
+                        artist_id,
+                        ",".join(request_body.configuration.include_groups),
+                        "BR",
+                        50,
+                        0,
+                    )
+                except Exception as e:
+                    errors.append({"artist_id": artist_id, "error": str(e)})
+                # for each album retrieved, get their popularity number and sort by this if necessary
+                all_albums = []
+
+                for album in albums.items:
+                    try:
+                        album_tracks = self.request_album_tracks(
+                            album_id=album.id,
+                        )
+                        all_albums.append(album_tracks)
+                    except Exception as e:
+                        errors.append({"album_id": album.id, "error": str(e)})
+                # sorting albums by popularity
+                if request_body.configuration.order_albums_by_popularity:
+                    all_albums = sorted(
+                        all_albums,
+                        key=lambda album: album.popularity,
+                        reverse=True,
+                    )
+                # limit the amount of albums
+                all_albums = all_albums[: request_body.configuration.limit_albums]
+
+                # if I have to sorting tracks by popularity, request track details and sort
+                if request_body.configuration.order_tracks_by_popularity:
+                    albums_with_track_details = []
+                    for album in all_albums:
+                        try:
+                            album_tracks = self.request_album_tracks(
+                                album_id=album.id, detail=True
+                            )
+                            album_tracks.tracks.items = sorted(
+                                album_tracks.tracks.items,
+                                key=lambda track: track.popularity,
+                                reverse=True,
+                            )
+                            albums_with_track_details.append(album_tracks)
+                        except Exception as e:
+                            errors.append({"album_id": album.id, "error": str(e)})
+                    
+                    all_albums = albums_with_track_details
+
+                # limit the quantity of tracks per album
+                all_albums_tracks = [
+                    album.tracks.items[
+                        : request_body.configuration.limit_tracks_per_album
+                    ]
+                    for album in all_albums
+                ]
+
+                # collecting only the names and the uris of tracks
+                albums_tracks_uris = [
+                    [{"name": track.name, "uri": track.uri} for track in album]
+                    for album in all_albums_tracks
+                ]
+
+                # remove duplicates
+                albums_tracks_uris = [
+                    [
+                        item
+                        for item in album_tracks_uris
+                        if item["name"] not in seen_names
+                        and not seen_names.add(item["name"])
+                    ]
+                    for album_tracks_uris in albums_tracks_uris
+                ]
+                # with the tracks, add the album's tracks in playlist
+                # the spotify only allowed add 100 songs per request, so this method add album by album in the provided playlist
+                for album_tracks_uris in albums_tracks_uris:
+                    try:
+                        self._playlist_add_list_of_tracks(
+                            playlist_id=playlist_id, tracks=album_tracks_uris
+                        )
+                    except Exception as e:
+                        errors.append({"album_id": album.id, "error": str(e)})
+
+            return {"errors": errors}
 
     def _playlist_add_list_of_tracks(
         self, playlist_id: str, tracks: list[str], position: int = 0

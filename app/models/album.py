@@ -11,6 +11,7 @@ class AlbumResponse(BaseModel):
     uri: str
     artists: List["AlbumArtistsResponse"]
     tracks: "AlbumTracksResponse"
+    popularity: int
 
 
 class AlbumArtistsResponse(BaseModel):
