@@ -6,8 +6,8 @@ from app.models.playlist import AddArtistTracksToPlaylistBody
 
 router = APIRouter()
 
-
 spotify_service = SpotifyWorker()
+
 
 # Authorization routes
 @router.get("/login", tags=["Authorization"])
@@ -16,46 +16,46 @@ def login():
 
 
 @router.get("/callback", tags=["Authorization"])
-async def callback(query_params: Request):
-
-    code = query_params.query_params.get("code")
-    error = query_params.query_params.get("error")
+async def callback(request: Request):
+    code = request.query_params.get("code")
+    error = request.query_params.get("error")
     if error:
-        return error
+        return {"error": error}
 
     return await spotify_service._login(code)
 
 
-# Tracks routes
-@router.get("/faixa/{musica_id}", tags=["Faixas"])
-def track_info(track_id: str, res: Response) -> TrackResponse | Error:
+# Track routes
+@router.get("/track/{track_id}", tags=["Tracks"])
+def track_info(track_id: str, response: Response) -> TrackResponse | Error:
     try:
-        response = spotify_service.request_track_info(track_id=track_id)
+        result = spotify_service.request_track_info(track_id=track_id)
     except Exception as e:
-        res.status_code = 500
+        response.status_code = 500
         return Error(message=str(e), status=500)
-    if type(response) == Error:
-        res.status_code = response.status
-    
-    return response
-    
+    if isinstance(result, Error):
+        response.status_code = result.status
+
+    return result
+
 
 # Album routes
-@router.get("/album/{url_album}", tags=["Albuns"])
+@router.get("/album/{album_id}", tags=["Albums"])
 def request_album_tracks(
-    url_album: str, order_by: str = None,
+    album_id: str,
+    order_by: str = None,
 ):
     try:
-        musicas = spotify_service.request_album_tracks(
-            album_id=url_album, order_by=order_by
+        tracks = spotify_service.request_album_tracks(
+            album_id=album_id, order_by=order_by
         )
     except Exception as e:
         return {"error": str(e)}
-    return musicas
+    return tracks
 
 
-# Artists routes
-@router.get("/artista/{url_artista}/albuns", tags=["Artistas"])
+# Artist routes
+@router.get("/artist/{artist_id}/albums", tags=["Artists"])
 def request_artist_albums(
     artist_id: str,
     categories: str = "album",
@@ -64,7 +64,7 @@ def request_artist_albums(
     offset: int = 0,
 ):
     try:
-        albuns = spotify_service.request_artist_albums(
+        albums = spotify_service.request_artist_albums(
             artist_id=artist_id,
             categories=categories,
             country=country,
@@ -73,35 +73,28 @@ def request_artist_albums(
         )
     except Exception as e:
         return {"error": str(e)}
-    return albuns
+    return albums
 
 
-@router.get("/artista/{url_artista}/melhores-musicas", tags=["Artistas"])
-def request_artist_popular_tracks(artist_id: str):
+@router.get("/artist/{artist_id}/top-tracks", tags=["Artists"])
+def request_artist_top_tracks(artist_id: str):
     try:
-        musicas = spotify_service.request_artist_top_tracks(artist_id=artist_id)
+        tracks = spotify_service.request_artist_top_tracks(artist_id=artist_id)
     except Exception as e:
         return {"error": str(e)}
-    return musicas
+    return tracks
 
 
-#playlists 
-@router.post("/playlists/{id_playlist}/album", tags=["Playlists"])
-def adicionar_album_playlist(id_playlist: str, url_album: str, posicao: int = 0):
-    lista_de_musicas = spotify_service._request_album_tracks_rank(url_album)
+# Playlist routes
+@router.post("/playlists/{playlist_id}/artists", tags=["Playlists"])
+def add_artist_tracks_to_playlist(
+    playlist_id: str, req_body: AddArtistTracksToPlaylistBody
+):
     try:
-        response = spotify_service._playlist_add_list_of_tracks(
-            playlist_id=id_playlist, position=posicao, tracks=lista_de_musicas
+        response = spotify_service.add_artists_tracks_playlist(
+            playlist_id=playlist_id, request_body=req_body
         )
     except Exception as e:
         return {"error": str(e)}
-    return response.json()
 
-@router.post("/playlists/{id_playlist}/artists", tags=["Playlists"])
-def adicionar_faixas_artista_playlist(id_playlist: str, req_body: AddArtistTracksToPlaylistBody ):
-    try: 
-        response = spotify_service.add_artists_tracks_playlist(playlist_id=id_playlist, request_body=req_body)
-    except Exception as e: 
-        return {"error" : str(e)}
-    
     return response

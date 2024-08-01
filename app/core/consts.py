@@ -1,2 +1,5 @@
-CLIENT_ID="f23acddf842d4567acab362927599871"
-CLIENT_SECRET="af08f4befae349e3b61f7972796c0195"
+SPOTIFY_API_URL = "https://api.spotify.com/v1"
+AUTHORIZATION_URL = "https://accounts.spotify.com/authorize"
+TOKEN_URL = "https://accounts.spotify.com/api/token"
+REDIRECT_URI = "http://localhost:8000/callback"
+DEFAULT_SCOPE = "playlist-modify-private playlist-modify-public playlist-read-private playlist-read-collaborative"

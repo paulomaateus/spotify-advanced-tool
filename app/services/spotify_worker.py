@@ -2,43 +2,48 @@ import requests
 import base64
 import threading
 import httpx
-from app.core.consts import CLIENT_ID, CLIENT_SECRET
+import os
+from dotenv import load_dotenv
+from fastapi.responses import RedirectResponse
+from app.core.consts import AUTHORIZATION_URL, DEFAULT_SCOPE, REDIRECT_URI, SPOTIFY_API_URL, TOKEN_URL
 from app.models.album import AlbumResponse
 from app.models.track import TrackResponse
 from app.models.artist import PopularTracksResponse, ArtistAlbumsResponse
 from app.models.schemas import Error
 from app.models.playlist import AddArtistTracksToPlaylistBody
-from fastapi.responses import RedirectResponse
+
 
 
 class SpotifyWorker:
     def __init__(self):
+        load_dotenv()
         self._token = None
         self._tokenType = None
         self._headers = None
-        self._spotify_url = "https://api.spotify.com/v1"
+        self._spotify_url = SPOTIFY_API_URL
         self.logged = False
+        self.client_id = os.getenv("CLIENT_ID")
+        self.client_secret = os.getenv("CLIENT_SECRET")
 
     def _authorize_user(self):
         response_type = "code"
-        redirect_uri = "http://localhost:8000/callback"
-        scope = "playlist-modify-private playlist-modify-public playlist-read-private playlist-read-collaborative"
-        url = f"https://accounts.spotify.com/authorize?response_type={response_type}&client_id={CLIENT_ID}&scope={scope}&redirect_uri={redirect_uri}"
+        scope = DEFAULT_SCOPE
+        url = f"{AUTHORIZATION_URL}?response_type={response_type}&client_id={self.client_id}&scope={scope}&redirect_uri={REDIRECT_URI}"
         return RedirectResponse(url)
 
     async def _login(self, code: str):
         body = {
             "grant_type": "authorization_code",
             "code": code,
-            "redirect_uri": "http://localhost:8000/callback",
+            "redirect_uri": REDIRECT_URI,
         }
-        bytes_credentials = f"{CLIENT_ID}:{CLIENT_SECRET}".encode("utf-8")
+        bytes_credentials = f"{self.client_id}:{self.client_secret}".encode("utf-8")
         base64_credentials = base64.b64encode(bytes_credentials).decode("utf-8")
         headers = {
             "Content-Type": "application/x-www-form-urlencoded",
             "Authorization": f"Basic {base64_credentials}",
         }
-        url = "https://accounts.spotify.com/api/token"
+        url = TOKEN_URL
 
         async with httpx.AsyncClient() as client:
             response = await client.post(url, headers=headers, data=body)
@@ -288,7 +293,10 @@ class SpotifyWorker:
                 tracks_count = 0
                 for album_tracks_uris in albums_tracks_uris:
                     tracks_count += len(album_tracks_uris)
-                    if tracks_count <= request_body.configuration.limit_tracks_per_artist:
+                    if (
+                        tracks_count
+                        <= request_body.configuration.limit_tracks_per_artist
+                    ):
                         try:
                             self._playlist_add_list_of_tracks(
                                 playlist_id=playlist_id, tracks=album_tracks_uris
@@ -296,10 +304,14 @@ class SpotifyWorker:
                         except Exception as e:
                             errors.append({"album_id": album.id, "error": str(e)})
                     else:
-                        overflow = tracks_count - request_body.configuration.limit_tracks_per_artist
+                        overflow = (
+                            tracks_count
+                            - request_body.configuration.limit_tracks_per_artist
+                        )
                         try:
                             self._playlist_add_list_of_tracks(
-                                playlist_id=playlist_id, tracks=album_tracks_uris[:-overflow]
+                                playlist_id=playlist_id,
+                                tracks=album_tracks_uris[:-overflow],
                             )
                         except Exception as e:
                             errors.append({"album_id": album.id, "error": str(e)})
