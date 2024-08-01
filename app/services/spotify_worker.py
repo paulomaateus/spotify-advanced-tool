@@ -217,8 +217,28 @@ class SpotifyWorker:
                         key=lambda album: album.popularity,
                         reverse=True,
                     )
+
                 # limit the amount of albums
-                all_albums = all_albums[: request_body.configuration.limit_albums]
+                albuns_count = -1
+                tracks_count = 0
+                for i in range(len(all_albums)):
+                    if (
+                        all_albums[i].tracks.total
+                        < request_body.configuration.limit_tracks_per_album
+                    ):
+                        tracks_count += all_albums[i].tracks.total
+                    else:
+                        tracks_count += (
+                            request_body.configuration.limit_tracks_per_album
+                        )
+                    if (
+                        tracks_count
+                        >= request_body.configuration.limit_tracks_per_artist
+                    ):
+                        albuns_count = i + 1
+                        break
+                if albuns_count != -1:
+                    all_albums = all_albums[:albuns_count]
 
                 # if I have to sorting tracks by popularity, request track details and sort
                 if request_body.configuration.order_tracks_by_popularity:
@@ -236,7 +256,7 @@ class SpotifyWorker:
                             albums_with_track_details.append(album_tracks)
                         except Exception as e:
                             errors.append({"album_id": album.id, "error": str(e)})
-                    
+
                     all_albums = albums_with_track_details
 
                 # limit the quantity of tracks per album
@@ -265,13 +285,24 @@ class SpotifyWorker:
                 ]
                 # with the tracks, add the album's tracks in playlist
                 # the spotify only allowed add 100 songs per request, so this method add album by album in the provided playlist
+                tracks_count = 0
                 for album_tracks_uris in albums_tracks_uris:
-                    try:
-                        self._playlist_add_list_of_tracks(
-                            playlist_id=playlist_id, tracks=album_tracks_uris
-                        )
-                    except Exception as e:
-                        errors.append({"album_id": album.id, "error": str(e)})
+                    tracks_count += len(album_tracks_uris)
+                    if tracks_count <= request_body.configuration.limit_tracks_per_artist:
+                        try:
+                            self._playlist_add_list_of_tracks(
+                                playlist_id=playlist_id, tracks=album_tracks_uris
+                            )
+                        except Exception as e:
+                            errors.append({"album_id": album.id, "error": str(e)})
+                    else:
+                        overflow = tracks_count - request_body.configuration.limit_tracks_per_artist
+                        try:
+                            self._playlist_add_list_of_tracks(
+                                playlist_id=playlist_id, tracks=album_tracks_uris[:-overflow]
+                            )
+                        except Exception as e:
+                            errors.append({"album_id": album.id, "error": str(e)})
 
             return {"errors": errors}
 
