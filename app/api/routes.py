@@ -42,12 +42,11 @@ def track_info(track_id: str, response: Response) -> TrackResponse | Error:
 # Album routes
 @router.get("/album/{album_id}", tags=["Albums"])
 def request_album_tracks(
-    album_id: str,
-    order_by: str = None,
+    album_id: str, detail: bool = False
 ):
     try:
         tracks = spotify_service.request_album_tracks(
-            album_id=album_id, order_by=order_by
+            album_id=album_id, detail=detail
         )
     except Exception as e:
         return {"error": str(e)}
