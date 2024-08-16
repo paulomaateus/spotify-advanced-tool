@@ -55,7 +55,7 @@ class SpotifyWorker:
             self._headers = {"Authorization": f"{self._tokenType} {self._token}"}
             self.logged = True
 
-            return RedirectResponse("http://localhost:8000/docs")
+            return RedirectResponse("http://54.233.147.159:8000/docs")
         else:
             raise Exception(f"Erro no login: {response.json()}")
 

@@ -1,5 +1,5 @@
 SPOTIFY_API_URL = "https://api.spotify.com/v1"
 AUTHORIZATION_URL = "https://accounts.spotify.com/authorize"
 TOKEN_URL = "https://accounts.spotify.com/api/token"
-REDIRECT_URI = "http://localhost:8000/callback"
+REDIRECT_URI = "http://54.233.147.159:8000/callback"
 DEFAULT_SCOPE = "playlist-modify-private playlist-modify-public playlist-read-private playlist-read-collaborative"
