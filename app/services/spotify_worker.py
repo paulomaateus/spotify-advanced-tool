@@ -5,13 +5,17 @@ import httpx
 import os
 from dotenv import load_dotenv
 from fastapi.responses import RedirectResponse
-from app.core.consts import AUTHORIZATION_URL, DEFAULT_SCOPE, REDIRECT_URI, SPOTIFY_API_URL, TOKEN_URL
+from app.errors.custom_exceptions import LoginErrorException, SpotifyErrorException
+from app.core.consts import (
+    AUTHORIZATION_URL,
+    DEFAULT_SCOPE,
+    SPOTIFY_API_URL,
+    TOKEN_URL,
+)
 from app.models.album import AlbumResponse
 from app.models.track import TrackResponse
 from app.models.artist import PopularTracksResponse, ArtistAlbumsResponse
-from app.models.schemas import Error
-from app.models.playlist import AddArtistTracksToPlaylistBody
-
+from app.models.playlist import AddArtistTracksToPlaylistBody, PlaylistAddTracksResponse
 
 
 class SpotifyWorker:
@@ -22,20 +26,24 @@ class SpotifyWorker:
         self._headers = None
         self._spotify_url = SPOTIFY_API_URL
         self.logged = False
-        self.client_id = os.getenv("CLIENT_ID")
-        self.client_secret = os.getenv("CLIENT_SECRET")
+        self.server_url = f"{os.getenv('SERVER_IP')}:{os.getenv('SERVER_PORT')}"
 
-    def _authorize_user(self):
+    def _authorize_user(self, client_id: str, client_secret: str) -> RedirectResponse:
         response_type = "code"
+        self.client_id = client_id
+        self.client_secret = client_secret
         scope = DEFAULT_SCOPE
-        url = f"{AUTHORIZATION_URL}?response_type={response_type}&client_id={self.client_id}&scope={scope}&redirect_uri={REDIRECT_URI}"
-        return RedirectResponse(url)
+        url = f"{AUTHORIZATION_URL}?response_type={response_type}&client_id={client_id}&scope={scope}&redirect_uri=http://{self.server_url}/callback"
+        try:
+            return RedirectResponse(url)
+        except Exception as e:
+            raise LoginErrorException(f"Login Error: Cannot redirect. {str(e)}", 502)
 
-    async def _login(self, code: str):
+    async def _login(self, code: str) -> RedirectResponse:
         body = {
             "grant_type": "authorization_code",
             "code": code,
-            "redirect_uri": REDIRECT_URI,
+            "redirect_uri": f"http://{self.server_url}/callback",
         }
         bytes_credentials = f"{self.client_id}:{self.client_secret}".encode("utf-8")
         base64_credentials = base64.b64encode(bytes_credentials).decode("utf-8")
@@ -54,10 +62,14 @@ class SpotifyWorker:
             self._start_token_renewal_timer(data["expires_in"])
             self._headers = {"Authorization": f"{self._tokenType} {self._token}"}
             self.logged = True
-
-            return RedirectResponse("http://54.233.147.159:8000/docs")
+            try:
+                return RedirectResponse(f"http://{self.server_url}/docs")
+            except Exception as e:
+                raise LoginErrorException(
+                    f"Login Error: Cannot redirect. {str(e)}", 502
+                )
         else:
-            raise Exception(f"Erro no login: {response.json()}")
+            raise LoginErrorException(f"Login Error: {response.json()}", 401)
 
     def _start_token_renewal_timer(self, expires_in):
         renewal_time = expires_in - 60
@@ -74,9 +86,10 @@ class SpotifyWorker:
                 return url[i + 1 :]
         return url
 
-    def request_artist_top_tracks(
-        self, artist_id: str
-    ) -> PopularTracksResponse | Error:
+    def request_artist_top_tracks(self, artist_id: str) -> PopularTracksResponse:
+
+        if not self.logged:
+            raise LoginErrorException(f"Login Error: The user is not logged in", 402)
 
         formated_id = self._get_id_from_url(artist_id)
         url = f"{self._spotify_url}/artists/{formated_id}/top-tracks?market=BR"
@@ -85,13 +98,18 @@ class SpotifyWorker:
         except Exception as e:
             raise e
         if response.status_code != 200:
-            return Error(**response.json())
+            raise SpotifyErrorException(
+                f"Spotify API Error: {response.json()['message']}", response.status_code
+            )
 
         return PopularTracksResponse(**response.json())
 
     def request_artist_albums(
         self, artist_id: str, categories: str, country: str, quantity: int, offset: int
-    ) -> ArtistAlbumsResponse | Error:
+    ) -> ArtistAlbumsResponse:
+        if not self.logged:
+            raise LoginErrorException(f"Login Error: The user is not logged in", 402)
+
         formated_id = self._get_id_from_url(artist_id)
         url = f"{self._spotify_url}/artists/{formated_id}/albums?include_groups={categories}&market={country}&limit={quantity}&offset={offset}"
         try:
@@ -99,13 +117,18 @@ class SpotifyWorker:
         except Exception as e:
             raise e
         if response.status_code != 200:
-            return Error(**response.json())
+            raise SpotifyErrorException(
+                f"Spotify API Error: {response.json()['message']}", response.status_code
+            )
 
         return ArtistAlbumsResponse(**response.json())
 
     def request_album_tracks(
         self, album_id: str, detail: bool = False
-    ) -> AlbumResponse | Error:
+    ) -> AlbumResponse:
+        if not self.logged:
+            raise LoginErrorException(f"Login Error: The user is not logged in", 402)
+
         formated_id = self._get_id_from_url(album_id)
         url = f"{self._spotify_url}/albums/{formated_id}"
 
@@ -113,8 +136,11 @@ class SpotifyWorker:
             response = requests.get(url=url, headers=self._headers)
         except Exception as e:
             raise e
+
         if response.status_code != 200:
-            return Error(**response.json())
+            raise SpotifyErrorException(
+                f"Spotify API Error: {response.json()['message']}", response.status_code
+            )
 
         data = response.json()
         if detail:
@@ -123,8 +149,6 @@ class SpotifyWorker:
 
             for album_track in album_tracks:
                 track_info = self.request_track_info(album_track["id"])
-                if type(track_info) == Error:
-                    return track_info
                 album_tracks_infos.append(track_info)
 
             # if order_by:
@@ -137,7 +161,10 @@ class SpotifyWorker:
             return response
         return AlbumResponse(**data)
 
-    def request_track_info(self, track_id: str) -> TrackResponse | Error:
+    def request_track_info(self, track_id: str) -> TrackResponse:
+        if not self.logged:
+            raise LoginErrorException(f"Login Error: The user is not logged in", 402)
+
         formated_id = self._get_id_from_url(track_id)
         url = f"{self._spotify_url}/tracks/{formated_id}"
         try:
@@ -145,14 +172,21 @@ class SpotifyWorker:
         except Exception as e:
             raise e
         if response.status_code != 200:
-            return Error(**response.json())
+            raise SpotifyErrorException(
+                f"Spotify API Error: {response.json()['message']}", response.status_code
+            )
+
         return TrackResponse(**response.json())
 
     def add_artists_tracks_playlist(
         self, playlist_id, request_body: AddArtistTracksToPlaylistBody
     ):
+        if not self.logged:
+            raise LoginErrorException(f"Login Error: The user is not logged in", 402)
+
         playlist_id = self._get_id_from_url(playlist_id)
         errors = []
+        success = []
         seen_names = set()
         if request_body.all_tracks:
             # for each artist, retrieve their albums
@@ -187,10 +221,13 @@ class SpotifyWorker:
                         self._playlist_add_list_of_tracks(
                             playlist_id=playlist_id, tracks=track_uris
                         )
+                        success += track_uris
                     except Exception as e:
                         errors.append({"album_id": album.id, "error": str(e)})
 
-            return {"errors": errors}
+            response = {"errors": errors, "success": success}
+
+            return PlaylistAddTracksResponse(**response)
         else:
             # for each artist, retrieve their albums according the configuration provided
             for artist_id in request_body.artists_ids:
@@ -301,6 +338,7 @@ class SpotifyWorker:
                             self._playlist_add_list_of_tracks(
                                 playlist_id=playlist_id, tracks=album_tracks_uris
                             )
+                            success += album_tracks_uris
                         except Exception as e:
                             errors.append({"album_id": album.id, "error": str(e)})
                     else:
@@ -313,11 +351,15 @@ class SpotifyWorker:
                                 playlist_id=playlist_id,
                                 tracks=album_tracks_uris[:-overflow],
                             )
+                            success += album_tracks_uris
                         except Exception as e:
                             errors.append({"album_id": album.id, "error": str(e)})
 
-            return {"errors": errors}
+            response = {"errors": errors, "success": success}
 
+            return PlaylistAddTracksResponse(**response)
+
+    # TODO Adicionar o retorno desse metodo auxiliar para melhorar a lógica do metodo acima
     def _playlist_add_list_of_tracks(
         self, playlist_id: str, tracks: list[str], position: int = 0
     ):
@@ -328,6 +370,5 @@ class SpotifyWorker:
         try:
             response = requests.post(url=url, headers=self._headers, json=body)
         except Exception as e:
-
             raise e
         return response

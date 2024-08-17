@@ -12,3 +12,16 @@ class AddArtistTracksToPlaylistBody(BaseModel):
     artists_ids: List["str"]
     all_tracks: bool
     configuration: AddArtistTracksToPlaylistConfig
+    
+class PlaylistAddTracksError(BaseModel):
+    album_id: str = ""
+    artist_id: str= ""
+    track_id: str= ""
+    error: str
+    
+class PlaylistAddTracksSucess(BaseModel):
+    name: str = ""
+    uri: str= ""
+class PlaylistAddTracksResponse(BaseModel):
+    errors: List["PlaylistAddTracksError"]
+    success: List["PlaylistAddTracksSucess"]
