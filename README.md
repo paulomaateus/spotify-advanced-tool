@@ -18,6 +18,7 @@ To install and run the code, follow these steps:
    ```bash
    git clone https://github.com/paulomaateus/spotify-advanced-tool.git
    cd spotify-advanced-tool
+   ```
 
 2. Create a virtual environment (optional, but recommended):
    ```bash
@@ -37,18 +38,26 @@ To install and run the code, follow these steps:
 
 ## Configuration
 
-To ensure the API works correctly, you need to configure Spotify credentials.
+To ensure the API works correctly, you need to configure server parameters.
 
 1. Rename the `sample.env` file to `.env`.
-2. Edit the `.env` file and add the `CLIENT_ID` and `CLIENT_SECRET` obtained from the [Spotify Developer Dashboard](https://developer.spotify.com/documentation/web-api/tutorials/getting-started).
+2. Edit the `.env` file and add the following variables:
+   - `SERVER_IP`: The IP address where the server will be hosted. For local development, you can set this to `localhost`.
+   - `SERVER_PORT`: The port number where the server will be accessible. For local development, you can set this to `8000`.
 
 ## Usage
 
 To access all the functionalities of the API, follow these steps:
 
-1. Access the login route `/login`.
-2. You will be redirected to a Spotify OAuth2 authorization. Authorize the application.
-3. After authorization, all endpoints will be available for use.
+1. **Access the login route**: Use the `/login` endpoint with `client_id` and `client_secret` as query parameters. For example:
+   ```
+   GET /login?client_id=YOUR_CLIENT_ID&client_secret=YOUR_CLIENT_SECRET
+   ```
+   This request will initiate the OAuth2 authorization process with Spotify.
+
+2. **Authorize the application**: You will be redirected to a Spotify OAuth2 authorization page. Follow the prompts to authorize the application to access your Spotify account.
+
+3. **Access the API**: Once the authorization is complete, all other API endpoints will be available for use.
 
 ## Endpoints
 
